@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>VolumeQuant Lite</title>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Noto Sans KR', sans-serif; margin: 24px; }
+    .card { border: 1px solid #eee; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    button { padding: 10px 16px; border-radius: 10px; border: 1px solid #ddd; cursor: pointer; }
+    pre { background:#fafafa; padding:12px; border-radius:10px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h1>VolumeQuant Lite</h1>
+  <div class="card">
+    <h3>1) 말뭉치 가져오기</h3>
+    <button id="btnBlob">/api/blob 호출</button>
+    <pre id="blobView">아직 없음</pre>
+  </div>
+
+  <div class="card">
+    <h3>2) LLM 설명 생성</h3>
+    <button id="btnExplain">/api/explain 호출</button>
+    <pre id="explainView">아직 없음</pre>
+  </div>
+
+  <script>
+    let currentBlob = null;
+
+    document.getElementById('btnBlob').onclick = async () => {
+      const res = await fetch('/api/blob');
+      const data = await res.json();
+      currentBlob = data;
+      document.getElementById('blobView').textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.getElementById('btnExplain').onclick = async () => {
+      if (!currentBlob) {
+        alert('먼저 말뭉치를 불러오세요.');
+        return;
+      }
+      document.getElementById('explainView').textContent = '생성 중...';
+      const res = await fetch('/api/explain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ blob: currentBlob })
+      });
+      const data = await res.json();
+      document.getElementById('explainView').textContent = data.explanation || '(응답 없음)';
+    };
+  </script>
+</body>
+</html>
