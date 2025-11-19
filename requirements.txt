@@ -1,5 +1,22 @@
+# Web Framework
 fastapi
 uvicorn[standard]
 httpx
 python-dotenv
 jinja2
+
+# Data Analysis
+pandas
+numpy
+yfinance
+pandas-datareader
+
+# Visualization
+matplotlib
+plotly
+
+# Machine Learning (for future expansion)
+scikit-learn
+
+# Database (optional, for data storage)
+sqlalchemy
