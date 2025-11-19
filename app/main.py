@@ -8,8 +8,8 @@ import json
 # 환경 변수 로드
 load_dotenv()
 
-from app.models.sample_model import run_dummy_pipeline
-from app.services.llm import explain
+from models.sample_model import run_dummy_pipeline
+from services.llm import explain
 
 app = FastAPI(title="VolumeQuant Lite", version="0.2.0")
 
@@ -38,3 +38,7 @@ async def api_explain(payload: dict = Body(...)):
         user_content = payload.get("text", "")
     result = await explain(user_content)
     return {"explanation": result}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
