@@ -4,10 +4,12 @@ ETF 통합 분석 파이프라인
 """
 from datetime import datetime
 import pandas as pd
-from typing import Dict, List, Optional
+import numpy as np
+from typing import Dict, List, Optional, Any
 import logging
 import sys
 from pathlib import Path
+import json
 
 # 상위 디렉토리를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -36,6 +38,26 @@ class ETFAnalyzer:
         )
         self.data_cache = None
         self.last_update = None
+    
+    def _json_safe(self, obj: Any) -> Any:
+        """
+        JSON 직렬화 가능하도록 객체 변환
+        Timestamp, NaN, NaT 등을 안전한 타입으로 변환
+        """
+        if isinstance(obj, dict):
+            return {key: self._json_safe(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._json_safe(item) for item in obj]
+        elif isinstance(obj, (pd.Timestamp, datetime)):
+            return obj.isoformat() if pd.notna(obj) else None
+        elif isinstance(obj, (np.integer, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64)):
+            return None if np.isnan(obj) else float(obj)
+        elif pd.isna(obj):
+            return None
+        else:
+            return obj
     
     def run_full_pipeline(
         self, 
@@ -78,6 +100,22 @@ class ETFAnalyzer:
         # 2단계: 거래량 특성 계산
         df = self.detector.calculate_volume_features(df)
         logger.info("거래량 특성 계산 완료")
+        
+        # Event_Level 컬럼을 전체 DataFrame에 추가
+        def classify_event(ratio):
+            if pd.isna(ratio):
+                return None
+            if ratio >= self.detector.thresholds['extreme']:
+                return 'EXTREME'
+            elif ratio >= self.detector.thresholds['high']:
+                return 'HIGH'
+            elif ratio >= self.detector.thresholds['medium']:
+                return 'MEDIUM'
+            elif ratio >= self.detector.thresholds['alert']:
+                return 'ALERT'
+            return None
+        
+        df['Event_Level'] = df['Volume_Spike_Ratio'].apply(classify_event)
         
         # 3단계: 이벤트 탐지
         events = self.detector.detect_events(df, recent_days=EVENT_HISTORY_DAYS)
@@ -124,7 +162,8 @@ class ETFAnalyzer:
         }
         
         logger.info("=== 파이프라인 완료 ===")
-        return result
+        # JSON 직렬화 안전성 보장
+        return self._json_safe(result)
     
     def quick_scan(self, tickers: Optional[List[str]] = None) -> Dict:
         """
@@ -153,11 +192,12 @@ class ETFAnalyzer:
                         'price_change_pct': round(latest['Price_Change_Pct'], 2) if not pd.isna(latest['Price_Change_Pct']) else None
                     })
             
-            return {
+            result = {
                 'timestamp': datetime.now().isoformat(),
                 'mode': 'quick_scan',
                 'data': latest_data
             }
+            return self._json_safe(result)
         
         except Exception as e:
             logger.error(f"빠른 스캔 실패: {e}")

@@ -1,22 +1,19 @@
 # Web Framework
-fastapi
-uvicorn[standard]
-httpx
-python-dotenv
-jinja2
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+httpx>=0.25.0
+python-dotenv>=1.0.0
 
-# Data Analysis
-pandas
-numpy
-yfinance
-pandas-datareader
+# Data Analysis & ETF Data
+pandas>=2.1.0
+numpy>=1.24.0
+yfinance>=0.2.31
 
-# Visualization
-matplotlib
-plotly
+# Optional: AI Analysis (Groq API는 httpx로 직접 호출)
+# groq  # 공식 SDK 사용 시
 
-# Machine Learning (for future expansion)
-scikit-learn
-
-# Database (optional, for data storage)
-sqlalchemy
+# Future Expansion (현재 미사용)
+# scikit-learn  # ML 기능 추가 시
+# sqlalchemy    # DB 연동 시
+# matplotlib    # 로컬 차트 생성 시
+# plotly        # 인터랙티브 차트 시

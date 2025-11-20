@@ -255,6 +255,11 @@
         alert('먼저 분석을 실행하세요.');
         return;
       }
+      
+      // 디버깅: 어떤 데이터를 전송하는지 확인
+      console.log('AI 설명 요청 데이터:', currentData);
+      console.log('데이터 모드:', currentData.mode || '전체 분석');
+      
       const explainDiv = document.getElementById('explainView');
       explainDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>AI가 분석 중...</p></div>';
       
@@ -265,7 +270,7 @@
           body: JSON.stringify({ blob: currentData })
         });
         const data = await res.json();
-        explainDiv.innerHTML = `<div style="line-height: 1.6; color: #333;">${data.explanation || '설명을 생성할 수 없습니다.'}</div>`;
+        explainDiv.innerHTML = `<div style="line-height: 1.6; color: #333; white-space: pre-line;">${data.explanation || '설명을 생성할 수 없습니다.'}</div>`;
       } catch (err) {
         explainDiv.innerHTML = `<p style="color: #ff4444;">오류: ${err.message}</p>`;
       }
@@ -281,8 +286,19 @@
 
       try {
         const res = await fetch(endpoint);
+        
+        // 응답이 JSON인지 확인
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await res.text();
+          throw new Error(`서버 오류: ${text.substring(0, 100)}`);
+        }
+        
         const data = await res.json();
         currentData = data;
+        
+        // 디버깅: 데이터 업데이트 확인
+        console.log(`${mode} 분석 완료, currentData 업데이트됨:`, data);
 
         if (data.error) {
           throw new Error(data.message);

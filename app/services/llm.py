@@ -2,46 +2,93 @@ import os, json, httpx
 
 PROVIDER = os.getenv("PROVIDER", "").lower()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 SYSTEM_PROMPT = (
-    "너는 ETF 기반 투자 전략 설명가야. 주어진 JSON 말뭉치를 읽고, "
-    "핵심 시그널(거래량 스파이크, OBV 추세, 매크로 국면)을 3~5문장으로 간결하게 요약하되, "
-    "왜 지금 특정 ETF가 유리/불리한지 데이터로 근거를 제시해줘."
+    "ETF 거래량 분석가. 데이터를 보고 3문장으로 요약: "
+    "1) 주목할 ETF와 거래량 스파이크 비율, "
+    "2) 가격 반응(상승/하락), "
+    "3) 투자 시사점."
 )
 
 def _rule_based_explain(user_content: str) -> str:
     try:
         data = json.loads(user_content)
     except Exception:
-        return f"입력 데이터를 해석했습니다:\n{user_content}"
-
-    sig = data.get("signals", {}); asof = data.get("asof", "")
-    pos, neg, neutral = [], [], []
-    for etf, s in sig.items():
-        vol = s.get("vol_spike", 0); obv = str(s.get("obv_trend","")).lower()
-        phase = s.get("phase",""); score = 0
-        if vol >= 2.0: score += 2
-        elif vol >= 1.5: score += 1
-        if obv == "up": score += 1
-        elif obv == "down": score -= 1
-        item = (etf, vol, obv, phase, score)
-        (pos if score>=2 else neg if score<=-1 else neutral).append(item)
-
-    def fmt(items):
-        return "\n".join([f"- {e[0]}: vol_spike {e[1]:.1f}, OBV {e[2]}, 국면 {e[3]}" for e in items]) or "- 없음"
+        return f"입력 데이터를 해석했습니다:\n{user_content[:200]}..."
 
     lines = []
-    if asof: lines.append(f"[기준 시각] {asof}")
-    lines += ["요약:"]
-    if pos: lines += ["① 매수 유리 후보:", fmt(sorted(pos, key=lambda x: x[4], reverse=True))]
-    if neutral: lines += ["② 관찰 대상:", fmt(neutral)]
-    if neg: lines += ["③ 비선호:", fmt(sorted(neg, key=lambda x: x[4]))]
-    if pos:
-        tops = ", ".join([e[0] for e in sorted(pos, key=lambda x: x[4], reverse=True)[:2]])
-        lines.append(f"\n결론: {tops} 위주 분할 진입이 유리합니다. 2~3거래일 추세 지속 확인 권장.")
+    
+    # 빠른 스캔 모드 처리
+    if data.get("mode") == "quick_scan":
+        scan_data = data.get("data", [])
+        timestamp = data.get("timestamp", "")
+        
+        lines.append(f"📊 빠른 스캔 분석 (기준: {timestamp[:19] if timestamp else '알 수 없음'})")
+        lines.append(f"모니터링 ETF 수: {len(scan_data)}개\n")
+        
+        # 거래량 스파이크 기준 정렬
+        sorted_data = sorted(scan_data, key=lambda x: x.get("volume_spike_ratio", 0) or 0, reverse=True)
+        
+        high_spikes = [d for d in sorted_data if (d.get("volume_spike_ratio") or 0) >= 1.5]
+        
+        if high_spikes:
+            lines.append("⚡ 주목할 ETF (거래량 스파이크 1.5x 이상):")
+            for item in high_spikes[:5]:
+                ticker = item.get("ticker", "?")
+                name = item.get("name", "")
+                spike = item.get("volume_spike_ratio", 0)
+                price_chg = item.get("price_change_pct", 0)
+                lines.append(f"  • {ticker} ({name}): 거래량 {spike:.2f}x, 가격 {price_chg:+.2f}%")
+            
+            lines.append(f"\n💡 결론: {high_spikes[0].get('ticker')} 등에서 거래량 급증 감지. 단기 모멘텀 주목 필요.")
+        else:
+            lines.append("💡 현재 뚜렷한 거래량 이상징후 없음. 관망 권장.")
+        
+        return "\n".join(lines)
+    
+    # 전체 분석 모드 처리
+    metadata = data.get("metadata", {})
+    summary = data.get("summary", {})
+    top_spikes = data.get("top_spikes", [])
+    
+    lines.append(f"📊 전체 분석 (기간: {metadata.get('date_range', {}).get('start', '?')} ~ {metadata.get('date_range', {}).get('end', '?')})")
+    lines.append(f"분석 ETF 수: {metadata.get('tickers_analyzed', 0)}개\n")
+    
+    # 이벤트 요약
+    total_events = summary.get("total_events", 0)
+    by_level = summary.get("by_level", {})
+    
+    if total_events > 0:
+        lines.append(f"🔍 감지된 거래량 이벤트: {total_events}개")
+        if by_level:
+            level_str = ", ".join([f"{level}: {count}개" for level, count in by_level.items()])
+            lines.append(f"  분류: {level_str}\n")
+        
+        # 최대 스파이크 ETF
+        if top_spikes:
+            lines.append("🔥 최대 거래량 스파이크 TOP 5:")
+            for spike in top_spikes[:5]:
+                ticker = spike.get("Ticker", "?")
+                date = spike.get("Date", "")
+                spike_ratio = spike.get("Volume_Spike_Ratio", 0)
+                price_chg = spike.get("Price_Change_Pct", 0)
+                lines.append(f"  • {ticker} ({date}): {spike_ratio:.2f}x 스파이크, 가격 {price_chg:+.2f}%")
+            
+            # 최근 이벤트 분석
+            latest_events = summary.get("latest_events", [])
+            if latest_events:
+                recent_tickers = list(set([e.get("Ticker") for e in latest_events[:5]]))
+                lines.append(f"\n💡 결론: 최근 {', '.join(recent_tickers[:3])} 등에서 거래량 이상징후 감지.")
+                lines.append("   포지션 진입 시 2~3일 추세 지속 여부 확인 권장.")
+            else:
+                lines.append(f"\n💡 결론: {top_spikes[0].get('Ticker')} 등의 과거 스파이크 확인됨. 현재는 관망 모드 권장.")
+        else:
+            lines.append("\n💡 결론: 분석 기간 내 뚜렷한 거래량 이상징후 없음. 정상 범위 내 거래.")
     else:
-        lines.append("\n결론: 뚜렷한 유입 우위 없음. 관망 또는 소액 탐색 진입 권장.")
+        lines.append("🔍 감지된 거래량 이벤트 없음")
+        lines.append("\n💡 결론: 분석 기간 내 특이사항 없음. 정상적인 거래량 수준 유지.")
+    
     return "\n".join(lines)
 
 async def _explain_with_groq(user_content: str) -> str:
@@ -57,13 +104,13 @@ async def _explain_with_groq(user_content: str) -> str:
     }
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"[DATA]\n{user_content}\n\n[요약]:"}
+        {"role": "user", "content": user_content}
     ]
     payload = {
-        "model": GROQ_MODEL,                 # 예: "llama3-8b-8192"
+        "model": GROQ_MODEL,
         "messages": messages,
         "temperature": 0.4,
-        "max_tokens": 350,
+        "max_tokens": 200,  # 토큰 절약
     }
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(url, headers=headers, json=payload)

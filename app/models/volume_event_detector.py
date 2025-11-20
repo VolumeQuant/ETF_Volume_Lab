@@ -84,21 +84,22 @@ class VolumeEventDetector:
         cutoff_date = df['Date'].max() - pd.Timedelta(days=recent_days)
         recent_df = df[df['Date'] >= cutoff_date].copy()
         
-        # 이벤트 레벨 분류
-        def classify_event(ratio):
-            if pd.isna(ratio):
+        # 이벤트 레벨 분류 (아직 없는 경우에만)
+        if 'Event_Level' not in recent_df.columns:
+            def classify_event(ratio):
+                if pd.isna(ratio):
+                    return None
+                if ratio >= self.thresholds['extreme']:
+                    return 'EXTREME'
+                elif ratio >= self.thresholds['high']:
+                    return 'HIGH'
+                elif ratio >= self.thresholds['medium']:
+                    return 'MEDIUM'
+                elif ratio >= self.thresholds['alert']:
+                    return 'ALERT'
                 return None
-            if ratio >= self.thresholds['extreme']:
-                return 'EXTREME'
-            elif ratio >= self.thresholds['high']:
-                return 'HIGH'
-            elif ratio >= self.thresholds['medium']:
-                return 'MEDIUM'
-            elif ratio >= self.thresholds['alert']:
-                return 'ALERT'
-            return None
-        
-        recent_df['Event_Level'] = recent_df['Volume_Spike_Ratio'].apply(classify_event)
+            
+            recent_df['Event_Level'] = recent_df['Volume_Spike_Ratio'].apply(classify_event)
         
         # 이벤트만 필터링
         events = recent_df[recent_df['Event_Level'].notna()].copy()
@@ -195,8 +196,19 @@ class VolumeEventDetector:
         # 거래량-가격 상관관계
         correlation = recent[['Volume_Change_Pct', 'Price_Change_Pct']].corr().iloc[0, 1]
         
-        # 최근 이벤트
-        recent_events = recent[recent['Event_Level'].notna()]
+        # 최근 이벤트 (Event_Level 컬럼이 있는 경우만)
+        if 'Event_Level' in recent.columns:
+            recent_events = recent[recent['Event_Level'].notna()]
+        else:
+            recent_events = pd.DataFrame()
+        
+        # recent_events의 Date를 문자열로 변환
+        events_list = []
+        if not recent_events.empty:
+            events_copy = recent_events.tail(5).copy()
+            if 'Date' in events_copy.columns:
+                events_copy['Date'] = events_copy['Date'].dt.strftime('%Y-%m-%d')
+            events_list = events_copy.to_dict('records')
         
         analysis = {
             'ticker': ticker,
@@ -208,7 +220,7 @@ class VolumeEventDetector:
             'price_change_pct': round(latest['Price_Change_Pct'], 2) if not pd.isna(latest['Price_Change_Pct']) else None,
             'event_count_90d': len(recent_events),
             'volume_price_correlation': round(correlation, 3) if not pd.isna(correlation) else None,
-            'recent_events': recent_events.tail(5).to_dict('records') if not recent_events.empty else []
+            'recent_events': events_list
         }
         
         return analysis
@@ -241,7 +253,9 @@ class VolumeEventDetector:
              'Volume_Spike_Ratio', 'Volume_Change_Pct', 'Price_Change_Pct']
         ].copy()
         
-        top_spikes['Date'] = top_spikes['Date'].dt.strftime('%Y-%m-%d')
+        # Date를 문자열로 변환
+        if 'Date' in top_spikes.columns:
+            top_spikes['Date'] = pd.to_datetime(top_spikes['Date']).dt.strftime('%Y-%m-%d')
         
         return top_spikes.to_dict('records')
 
