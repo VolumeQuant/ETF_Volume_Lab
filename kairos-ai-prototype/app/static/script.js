@@ -96,52 +96,83 @@ function renderStockAnalysis(data) {
         currentPrice.className = 'current-price price-down';
     }
     
-    // AI 시황 분석 (상단)
+    // AI 시황 분석 (상단) - 구조화된 형태로 표시
     const aiSummaryText = stock_info.ai_summary;
     const topSentimentMatch = aiSummaryText.match(/\[(긍정|부정|중립)\]/);
     const topSentiment = topSentimentMatch ? topSentimentMatch[1] : '중립';
-    document.getElementById('aiSummary').textContent = aiSummaryText.replace(/\[(긍정|부정|중립)\]\s*/, '');
+    
+    // 감성 표시 제거
+    let cleanedText = aiSummaryText.replace(/\[(긍정|부정|중립)\]\s*/, '');
+    
+    // 텍스트를 구조화하여 표시
+    let formattedHTML = formatAiSummary(cleanedText);
+    document.getElementById('aiSummary').innerHTML = formattedHTML;
     renderSentimentBadge('topAiSummarySentiment', topSentiment);
     
     // AI 시황 요약 (메인) - 각 뉴스에 배지 추가
     let newsSummaryHTML = news_summary;
     
-    // AI 분석 결론을 추출하고 맨 위로 이동
-    const aiConclusionMatch = newsSummaryHTML.match(/<div class="ai-conclusion">(.*?)<\/div>/s);
-    let aiConclusionHTML = '';
-    if (aiConclusionMatch) {
-        // 원본에서 제거
-        newsSummaryHTML = newsSummaryHTML.replace(/<div class="ai-conclusion">.*?<\/div>/s, '');
-        // "AI 분석 결론:"을 "두 줄 요약:"으로 변경
-        aiConclusionHTML = aiConclusionMatch[1].replace(/💡\s*AI 분석 결론:\s*/, '💡 두 줄 요약: ');
+    // AI 분석 결론 제거
+    newsSummaryHTML = newsSummaryHTML.replace(/<div class="ai-conclusion">.*?<\/div>/s, '');
+    
+    // 뉴스 아이템을 정확히 파싱하여 처음 4개만 추출
+    const newsItemRegex = /<div class="news-item (positive|negative|neutral)">[\s\S]*?<\/div>\s*(?=<div class="news-item|<div class="ai-conclusion|$)/g;
+    const allNewsItems = [];
+    let match;
+    
+    // 모든 뉴스 아이템 추출
+    while ((match = newsItemRegex.exec(newsSummaryHTML)) !== null) {
+        allNewsItems.push(match[0].trim());
     }
     
-    // 전체 감성 분석
-    const overallSentimentMatch = newsSummaryHTML.match(/class="news-item\s+(positive|negative|neutral)"/);
+    // 정확히 처음 4개만 선택
+    const visibleNewsItems = allNewsItems.slice(0, 4);
+    const remainingNewsItems = allNewsItems.slice(4);
+    
+    // 전체 감성 분석 (첫 번째 뉴스 아이템 기준)
+    const overallSentimentMatch = visibleNewsItems[0]?.match(/class="news-item\s+(positive|negative|neutral)"/);
     const overallSentiment = overallSentimentMatch ? (overallSentimentMatch[1] === 'positive' ? '긍정' : overallSentimentMatch[1] === 'negative' ? '부정' : '중립') : '중립';
     renderSentimentBadge('aiMainSentiment', overallSentiment);
     
-    // 각 news-item의 헤더에 배지를 추가 (같은 줄에 표시)
-    // news-item 블록 전체를 처리하여 sentiment를 정확히 매칭
-    newsSummaryHTML = newsSummaryHTML.replace(
-        /<div class="news-item (positive|negative|neutral)">\s*<div class="news-header">/g,
-        (match, sentiment) => {
-            const sentimentIcon = sentiment === 'positive' ? '▲' : sentiment === 'negative' ? '▼' : '●';
-            const sentimentLabel = sentiment === 'positive' ? '긍정' : sentiment === 'negative' ? '부정' : '중립';
-            return `<div class="news-item ${sentiment}">
-                    <div class="news-header">
-                    <span class="news-sentiment-badge-inline sentiment-${sentiment}">
-                        <span class="sentiment-icon">${sentimentIcon}</span>${sentimentLabel}
-                    </span>`;
-        }
-    );
+    // 각 news-item의 헤더에 배지 추가 (처음 4개)
+    const processedVisibleItems = visibleNewsItems.map(item => {
+        return item.replace(
+            /<div class="news-item (positive|negative|neutral)">\s*<div class="news-header">/,
+            (match, sentiment) => {
+                const sentimentIcon = sentiment === 'positive' ? '▲' : sentiment === 'negative' ? '▼' : '●';
+                const sentimentLabel = sentiment === 'positive' ? '긍정' : sentiment === 'negative' ? '부정' : '중립';
+                return `<div class="news-item ${sentiment}">
+                        <div class="news-header">
+                        <span class="news-sentiment-badge-inline sentiment-${sentiment}">
+                            <span class="sentiment-icon">${sentimentIcon}</span>${sentimentLabel}
+                        </span>`;
+            }
+        );
+    });
     
-    // AI 분석 결론을 맨 위에 추가
-    if (aiConclusionHTML) {
-        newsSummaryHTML = `<div class="ai-conclusion">${aiConclusionHTML}</div>\n\n${newsSummaryHTML}`;
+    // 나머지 뉴스 아이템도 배지 추가 (스크롤로 보이도록)
+    const processedRemainingItems = remainingNewsItems.map(item => {
+        return item.replace(
+            /<div class="news-item (positive|negative|neutral)">\s*<div class="news-header">/,
+            (match, sentiment) => {
+                const sentimentIcon = sentiment === 'positive' ? '▲' : sentiment === 'negative' ? '▼' : '●';
+                const sentimentLabel = sentiment === 'positive' ? '긍정' : sentiment === 'negative' ? '부정' : '중립';
+                return `<div class="news-item ${sentiment}">
+                        <div class="news-header">
+                        <span class="news-sentiment-badge-inline sentiment-${sentiment}">
+                            <span class="sentiment-icon">${sentimentIcon}</span>${sentimentLabel}
+                        </span>`;
+            }
+        );
+    });
+    
+    // 최종 HTML 조합: 보이는 4개 + 나머지 (스크롤)
+    let finalHTML = processedVisibleItems.join('\n\n');
+    if (processedRemainingItems.length > 0) {
+        finalHTML += '\n\n' + processedRemainingItems.join('\n\n');
     }
     
-    document.getElementById('newsSummary').innerHTML = newsSummaryHTML;
+    document.getElementById('newsSummary').innerHTML = finalHTML;
     
     // 수급 정보
     renderSupplyDemand(supply_demand);
@@ -363,6 +394,35 @@ function applyComparisonColor(elementId, value) {
     } else {
         element.style.color = 'var(--text-secondary)';
     }
+}
+
+// AI 요약 텍스트 포맷팅 - 구조화된 표시
+function formatAiSummary(text) {
+    // 줄바꿈으로 구분된 섹션을 파싱
+    const sections = text.split('\n\n');
+    let formattedHTML = '';
+    
+    sections.forEach(section => {
+        const trimmed = section.trim();
+        if (!trimmed) return;
+        
+        // 이모지가 포함된 섹션 헤더 확인
+        if (trimmed.match(/^[📈📉💰🎯🏭]/)) {
+            formattedHTML += `<div class="ai-summary-section-header">${trimmed}</div>`;
+        }
+        // 첫 번째 요약 줄 ([긍정] 또는 [부정]으로 시작)
+        else if (trimmed.match(/^\[긍정\]|^\[부정\]/)) {
+            // [긍정] 또는 [부정] 부분을 강조
+            const highlighted = trimmed.replace(/(\[긍정\]|\[부정\])/, '<span class="ai-sentiment-badge">$1</span>');
+            formattedHTML += `<div class="ai-summary-intro">${highlighted}</div>`;
+        }
+        // 일반 내용
+        else {
+            formattedHTML += `<div class="ai-summary-content">${trimmed}</div>`;
+        }
+    });
+    
+    return formattedHTML;
 }
 
 // 감성 배지 렌더링
